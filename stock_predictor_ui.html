@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Sentiment Predictor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        .tab-button { transition: background-color 0.3s, color 0.3s; }
+        .tab-button.active { background-color: #6d37d1; color: white; }
+        .tab-button:not(.active):hover { background-color: #e0e7ff; }
+        .status-pending { background-color: #fef3c7; color: #92400e; }
+        .status-checked { background-color: #d1fae5; color: #065f46; }
+        .status-error { background-color: #fee2e2; color: #991b1b; }
+        .score-label { font-size: 0.8rem; color: #a5b4fc; } /* Lighter for contrast */
+        .score-value { font-size: 1.5rem; font-weight: 700; color: #ffffff; line-height: 1; }
+        .score-percentage { font-size: 0.9rem; font-weight: 500; color: #e0e7ff; } /* Lighter for contrast */
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #ffffff; /* White loader on buttons */ border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle;}
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        /* Style for log output */
+        #log-output, #predict-log, #check-log { /* Combined styles */
+             white-space: pre-wrap; word-wrap: break-word; font-family: monospace;
+             background-color: #1f2937; color: #d1d5db; padding: 1rem;
+             border-radius: 0.375rem; max-height: 300px; overflow-y: auto;
+             margin-top: 1rem; font-size: 0.8rem; line-height: 1.4;
+        }
+        .log-hidden { display: none; }
+        /* Button disabled state */
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+    </style>
+</head>
+<body class="">
+    <div class="w-[100vw] mx-auto bg-white overflow-hidden">
+
+        <header class="bg-gradient-to-r from-indigo-600 to-purple-700 p-4 sm:p-6 text-white flex justify-between items-center ">
+            <h1 class="text-xl sm:text-2xl font-bold">📈 Stock Predictor</h1>
+            <div id="reliability-score-display" class="text-right">
+                <span class="score-label block">Reliability Score</span>
+                <span class="score-value block">--</span>
+                <span class="score-percentage block">(--%)</span>
+            </div>
+        </header>
+
+        <nav class="flex border-b border-gray-200 bg-gray-50">
+            <button id="tab-main" class="tab-button flex-1 py-3 px-4 text-center font-medium text-gray-700 active" onclick="showTab('main')">Predict & Check</button>
+            <button id="tab-history" class="tab-button flex-1 py-3 px-4 text-center font-medium text-gray-700" onclick="showTab('history')">History</button>
+        </nav>
+
+        <main class="p-4 sm:p-6">
+
+            <div id="content-main">
+                <h2 class="text-lg font-semibold mb-4 text-gray-800">Generate New Prediction</h2>
+                <div class="flex flex-col sm:flex-row gap-3 mb-6">
+                    <input type="text" id="company-name-input" placeholder="Enter Company Name (e.g., Reliance)" class="flex-grow p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-150">
+                    <button id="predict-button" onclick="handlePredict()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md transition duration-150 flex items-center justify-center">
+                        <span>Run Prediction Pipeline</span>
+                        <span id="predict-loader" class="loader hidden ml-2"></span>
+                    </button>
+                </div>
+                <div id="predict-status" class="mt-4 text-sm text-gray-600 min-h-[40px] p-3 border border-gray-200 rounded-md bg-gray-50">Enter a company name and click Run.</div>
+                <pre id="predict-log" class="log-hidden"></pre>
+
+                <hr class="my-6 border-gray-200">
+
+                <h2 class="text-lg font-semibold mb-4 text-gray-800">Check Pending Predictions</h2>
+                <p class="text-sm text-gray-600 mb-4">Click below to run the verifier script. This checks 'pending' predictions and updates the reliability score.</p>
+                <button id="check-button" onclick="handleCheck()" class="bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-md transition duration-150 flex items-center justify-center">
+                    <span>Check Pending & Update Score</span>
+                     <span id="check-loader" class="loader hidden ml-2"></span>
+                </button>
+                 <div id="check-status" class="mt-4 text-sm text-gray-600 min-h-[40px] p-3 border border-gray-200 rounded-md bg-gray-50">Ready to check pending predictions.</div>
+                 <pre id="check-log" class="log-hidden"></pre>
+            </div>
+
+            <div id="content-history" class="hidden">
+                <h2 class="text-lg font-semibold mb-4 text-gray-800">Prediction History</h2>
+                 <button onclick="loadHistory(true)" class="mb-4 text-sm text-indigo-600 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed" id="refresh-history-button">Refresh History</button>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Saved</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Prediction</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Checked</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actual %</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Score (/1.0)</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Result</th>
+                            </tr>
+                        </thead>
+                        <tbody id="history-table-body" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="8" class="text-center p-4 text-gray-500">Loading history...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <!-- <footer class="bg-gray-100 p-4 text-xs text-gray-500 border-t border-gray-200 rounded-b-lg">
+            <strong>Instructions:</strong>
+            <ol class="list-decimal list-inside ml-4 mt-2">
+                <li>Make sure the Flask server (`app.py`) is running in your activated `venv`.</li>
+                <li>Enter a company name and click "Run Prediction Pipeline" to execute the backend scripts. This may take several minutes.</li>
+                <li>Click "Check Pending & Update Score" (usually the next day) to run the verifier script.</li>
+                <li>The Reliability Score and History update automatically after successful operations.</li>
+                <li>View detailed script logs in the terminal where `app.py` is running. Logs are also shown briefly on this page after operations complete.</li>
+            </ol>
+        </footer> -->
+    </div>
+
+    <script>
+        const API_BASE_URL = ''; // Relative path for Flask app
+
+        let allPredictions = [];
+        let reliabilityScore = { total_predictions: 0, total_score_points: 0.0 };
+        let isPredicting = false;
+        let isChecking = false;
+
+        // Get references to UI elements
+        const predictButton = document.getElementById('predict-button');
+        const checkButton = document.getElementById('check-button');
+        const predictLoader = document.getElementById('predict-loader');
+        const checkLoader = document.getElementById('check-loader');
+        const predictStatusEl = document.getElementById('predict-status');
+        const checkStatusEl = document.getElementById('check-status');
+        const predictLogEl = document.getElementById('predict-log');
+        const checkLogEl = document.getElementById('check-log');
+        const historyTableBody = document.getElementById('history-table-body');
+        const refreshHistoryButton = document.getElementById('refresh-history-button');
+
+
+        // --- UI Update Functions ---
+        function updateButtonStates() {
+            const busy = isPredicting || isChecking;
+            predictButton.disabled = busy;
+            checkButton.disabled = busy;
+            refreshHistoryButton.disabled = busy; // Disable refresh while busy
+            predictLoader.classList.toggle('hidden', !isPredicting);
+            checkLoader.classList.toggle('hidden', !isChecking);
+        }
+
+        function setStatus(element, message, type = 'info') {
+            element.textContent = message;
+            let bgColor = 'bg-gray-50';
+            let textColor = 'text-gray-600';
+            let borderColor = 'border-gray-200';
+
+            if (type === 'success') {
+                bgColor = 'bg-green-50'; textColor = 'text-green-700'; borderColor = 'border-green-200';
+            } else if (type === 'error') {
+                bgColor = 'bg-red-50'; textColor = 'text-red-700'; borderColor = 'border-red-200';
+            } else if (type === 'warning') {
+                bgColor = 'bg-yellow-50'; textColor = 'text-yellow-700'; borderColor = 'border-yellow-200';
+            } else if (type === 'loading') {
+                 bgColor = 'bg-blue-50'; textColor = 'text-blue-700'; borderColor = 'border-blue-200';
+            }
+            // --- MODIFICATION HERE ---
+            // Ensure status element retains necessary classes AND add 'whitespace-pre-wrap'
+            element.className = `mt-4 text-sm p-3 border rounded-md min-h-[40px] ${bgColor} ${textColor} ${borderColor} whitespace-pre-wrap`;
+            // --- END MODIFICATION ---
+        }
+
+
+        function showLog(logElement, logText) {
+            if (logText && logText.trim()) {
+                logElement.textContent = logText.trim();
+                logElement.classList.remove('log-hidden');
+            } else {
+                logElement.textContent = '';
+                logElement.classList.add('log-hidden');
+            }
+        }
+
+
+        // --- Tab Management ---
+        function showTab(tabName) {
+            // (Function remains the same)
+            document.getElementById('content-main').classList.toggle('hidden', tabName !== 'main');
+            document.getElementById('content-history').classList.toggle('hidden', tabName !== 'history');
+            document.getElementById('tab-main').classList.toggle('active', tabName === 'main');
+            document.getElementById('tab-history').classList.toggle('active', tabName === 'history');
+
+            if (tabName === 'history') loadHistory(false);
+            if (tabName === 'main') loadReliabilityScore();
+        }
+
+        // --- Data Fetching & Display ---
+        async function loadReliabilityScore() {
+            // Added no-cache header
+             try {
+                const response = await fetch(`${API_BASE_URL}/api/score`, { cache: "no-store" });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const scoreData = await response.json();
+                reliabilityScore.total_predictions = scoreData.total_predictions || 0;
+                reliabilityScore.total_score_points = scoreData.total_score_points || 0.0;
+                displayReliabilityScore();
+            } catch (error) {
+                console.error('Error loading reliability score:', error);
+                displayReliabilityScore(); // Display default/stale score
+            }
+        }
+
+        async function loadHistory(forceRefresh = false) {
+             // Added no-cache header
+            if (isPredicting || isChecking) return;
+            if (forceRefresh || historyTableBody.rows.length <= 1) {
+                 historyTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">Loading history...</td></tr>';
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/history`, { cache: "no-store" });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const historyData = await response.json();
+                if (!Array.isArray(historyData)) throw new Error('Invalid history format');
+                allPredictions = historyData;
+                renderHistoryTable();
+            } catch (error) {
+                console.error('Error loading prediction history:', error);
+                historyTableBody.innerHTML = `<tr><td colspan="8" class="text-center p-4 text-red-500">Error loading history: ${error.message}. Is the backend server running?</td></tr>`;
+            }
+        }
+
+        function displayReliabilityScore() {
+            // (Function remains the same)
+             const scoreDisplay = document.getElementById('reliability-score-display');
+            let score = 0;
+            let percentage = 0;
+            if (reliabilityScore.total_predictions > 0) {
+                score = reliabilityScore.total_score_points / reliabilityScore.total_predictions;
+                percentage = score * 100;
+            }
+            scoreDisplay.querySelector('.score-value').textContent = score.toFixed(3);
+            scoreDisplay.querySelector('.score-percentage').textContent = `(${percentage.toFixed(1)}%)`;
+        }
+
+        function renderHistoryTable() {
+             // (Function remains the same)
+            historyTableBody.innerHTML = '';
+            if (allPredictions.length === 0) {
+                historyTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">No prediction history found.</td></tr>';
+                return;
+            }
+            [...allPredictions].reverse().forEach(pred => { // Newest first
+                const row = historyTableBody.insertRow();
+                const predictionScore = pred.prediction_score ?? null;
+                const resultLabel = getResultLabel(predictionScore);
+                const statusClass = pred.status === 'pending' ? 'status-pending' : (pred.status === 'error' ? 'status-error' : 'status-checked');
+                const actualPercentText = (pred.actual_movement_percent !== undefined && pred.actual_movement_percent !== null)
+                    ? pred.actual_movement_percent.toFixed(2) + '%' : '--';
+
+                row.innerHTML = `
+                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${pred.company || 'N/A'}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${pred.date_saved || 'N/A'}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500 font-semibold">${getPredictionEmoji(pred.prediction)} ${pred.prediction || 'N/A'}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass}">${pred.status || 'N/A'}</span></td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${pred.date_checked || '--'}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${actualPercentText}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${predictionScore !== null ? predictionScore.toFixed(2) : '--'}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-600">${resultLabel}</td>
+                `;
+            });
+        }
+
+        function getPredictionEmoji(prediction) { /* ... (same as before) ... */
+             switch (prediction) { case 'rise': return '📈'; case 'fall': return '📉'; case 'neutral': return '➖'; default: return ''; }
+        }
+        function getResultLabel(score) { /* ... (same as before) ... */
+             if (score === null || score === undefined) return '--';
+            if (score >= 0.9) return 'Excellent 👍👍'; if (score >= 0.7) return 'Good 👍';
+            if (score >= 0.4) return 'Okay 👌'; if (score >= 0.2) return 'Poor 👎';
+            return 'Incorrect 👎👎';
+         }
+
+        // --- Button Handlers (Actual API Calls) ---
+        async function handlePredict() {
+            // (Function remains largely the same)
+             if (isPredicting || isChecking) return;
+            const companyNameInput = document.getElementById('company-name-input');
+            const companyName = companyNameInput.value.trim();
+
+            if (!companyName) {
+                setStatus(predictStatusEl, '⚠️ Please enter a company name.', 'warning');
+                showLog(predictLogEl, '');
+                return;
+            }
+
+            isPredicting = true;
+            updateButtonStates();
+            setStatus(predictStatusEl, `⏳ Running prediction pipeline for ${companyName}... This may take several minutes.`, 'loading');
+            showLog(predictLogEl, ''); // Clear previous log
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/predict`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ company_name: companyName })
+                });
+                const result = await response.json();
+
+                if (!response.ok || !result.success) {
+                    // Include log in error message if available
+                    throw new Error(result.message || `HTTP error ${response.status}`, { cause: result.log });
+                }
+
+                setStatus(predictStatusEl, `✅ ${result.message}`, 'success');
+                // showLog(predictLogEl, result.log || ''); // Show full log
+                companyNameInput.value = ''; // Clear input on success
+                loadReliabilityScore();
+                loadHistory(true); // Force refresh history
+
+            } catch (error) {
+                console.error('Prediction error:', error);
+                setStatus(predictStatusEl, `❌ Error: ${error.message}. Check Flask terminal for details.`, 'error');
+                showLog(predictLogEl, error.cause || `Error details unavailable. Check Flask terminal.`); // Show log from error cause
+
+            } finally {
+                isPredicting = false;
+                updateButtonStates();
+            }
+        }
+
+        async function handleCheck() {
+             // (Function remains largely the same)
+            if (isPredicting || isChecking) return;
+
+            isChecking = true;
+            updateButtonStates();
+            setStatus(checkStatusEl, '⏳ Running verifier script...', 'loading');
+            showLog(checkLogEl, '');
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/check`, { method: 'POST' });
+                const result = await response.json();
+
+                 if (!response.ok || !result.success) {
+                     // Even on failure, update UI with potentially changed data from backend
+                     if (result.updated_score) reliabilityScore = result.updated_score;
+                     if (result.updated_history) allPredictions = result.updated_history;
+                     displayReliabilityScore();
+                     renderHistoryTable();
+                    throw new Error(result.message || `HTTP error ${response.status}`, { cause: result.log });
+                }
+
+                // Use summary from stdout for status if available
+                // We add the '✅' prefix here in the JS for consistency
+                setStatus(checkStatusEl, `✅ ${result.summary || result.message}`, 'success');
+                // showLog(checkLogEl, result.log || ''); // Show full log
+
+                // Update score and history display with data from successful response
+                if (result.updated_score) reliabilityScore = result.updated_score;
+                if (result.updated_history) allPredictions = result.updated_history;
+                displayReliabilityScore();
+                renderHistoryTable(); // Force refresh after check
+
+            } catch (error) {
+                console.error('Check error:', error);
+                setStatus(checkStatusEl, `❌ Error: ${error.message}. Check Flask terminal.`, 'error');
+                showLog(checkLogEl, error.cause || `Error details unavailable. Check Flask terminal.`);
+
+            } finally {
+                isChecking = false;
+                updateButtonStates();
+            }
+        }
+
+        // --- Initial Load ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadReliabilityScore();
+            loadHistory(); // Load initial history
+            updateButtonStates(); // Enable buttons initially
+        });
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,125 @@
+# -----------------------------------------------------------------------------
+# Secrets and Sensitive Configuration
+# -----------------------------------------------------------------------------
+# NEVER commit sensitive files.
+# This includes .env files, credentials, API keys, and private keys.
+*.env
+.env
+.env.*
+!.env.example
+credentials/
+secrets.yml
+*.pem
+*.key
+
+# -----------------------------------------------------------------------------
+# Python Virtual Environments
+# -----------------------------------------------------------------------------
+# Common names for virtual environments. The slash at the end ensures
+# we only ignore directories.
+/venv/
+/.venv/
+/env/
+/ENV/
+/virtual/
+/venv*
+
+# -----------------------------------------------------------------------------
+# Python Compiled Files & Caches
+# -----------------------------------------------------------------------------
+# Compiled Python files (bytecode)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# -----------------------------------------------------------------------------
+# Python Distribution & Build Artifacts
+# -----------------------------------------------------------------------------
+/build/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.spec
+
+# -----------------------------------------------------------------------------
+# Testing & Coverage
+# -----------------------------------------------------------------------------
+/htmlcov/
+/.tox/
+/.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+
+# -----------------------------------------------------------------------------
+# Jupyter Notebooks
+# -----------------------------------------------------------------------------
+# Checkpoint files
+.ipynb_checkpoints
+
+# -----------------------------------------------------------------------------
+# IDE & Editor Configuration
+# -----------------------------------------------------------------------------
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+.history/
+
+# PyCharm / IntelliJ
+.idea/
+*.iml
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# -----------------------------------------------------------------------------
+# Operating System Files
+# -----------------------------------------------------------------------------
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+
+# -----------------------------------------------------------------------------
+# Logs & Temporary Files
+# -----------------------------------------------------------------------------
+*.log
+*.tmp
+*.bak
+*.swp
+*~

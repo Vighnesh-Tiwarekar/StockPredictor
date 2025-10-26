@@ -1,0 +1,8 @@
+python -m venv venv
+.\venv\Scripts\activate
+pip install huggingface_hub python-dotenv
+pip install praw python-dotenv
+pip install yfinance python-dotenv
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install Flask
+flask run
