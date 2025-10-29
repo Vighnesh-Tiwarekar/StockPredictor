@@ -1,26 +1,25 @@
 import sys
 import os
-import praw # Reddit API Wrapper
+import praw 
 from praw.exceptions import RedditAPIException
 from dotenv import load_dotenv
 import traceback
 import time
-import re # For cleaning LLM output
+import re 
+from datetime import datetime, timedelta, timezone
 
-# --- Import Hugging Face Client ---
 from huggingface_hub import InferenceClient
 from huggingface_hub.errors import HfHubHTTPError
-# ------------------------------------
 
 # --- Configuration ---
-MAX_POSTS_PER_SUBREDDIT = 25
+MAX_POSTS_PER_SUBREDDIT = 50 
 MAX_COMMENTS_PER_POST = 500
-SEARCH_KEYWORD = "" # Set based on filename
+SEARCH_KEYWORD = "" 
 LLM_FILTER_BATCH_SIZE = 10
 LLM_MODEL_NAME = "mistralai/Mistral-7B-Instruct-v0.3"
-# ---------------------
 
 # --- Load Credentials ---
+# (This section remains the same)
 load_dotenv()
 REDDIT_CLIENT_ID = os.getenv("REDDIT_CLIENT_ID")
 REDDIT_CLIENT_SECRET = os.getenv("REDDIT_CLIENT_SECRET")
@@ -29,7 +28,6 @@ REDDIT_USERNAME = os.getenv("REDDIT_USERNAME")
 REDDIT_PASSWORD = os.getenv("REDDIT_PASSWORD")
 HF_API_TOKEN = os.getenv("HF_API_TOKEN")
 
-# Check Credentials
 if not all([REDDIT_CLIENT_ID, REDDIT_CLIENT_SECRET, REDDIT_USER_AGENT, REDDIT_USERNAME, REDDIT_PASSWORD]):
     print("Error: Missing Reddit API credentials in .env file.", file=sys.stderr)
     sys.exit(1)
@@ -39,6 +37,7 @@ if not HF_API_TOKEN:
 # -----------------------------
 
 # --- Initialize API Clients ---
+# (This section remains the same)
 try:
     reddit = praw.Reddit(client_id=REDDIT_CLIENT_ID, client_secret=REDDIT_CLIENT_SECRET,
                          user_agent=REDDIT_USER_AGENT, username=REDDIT_USERNAME,
@@ -58,9 +57,10 @@ except Exception as e:
     sys.exit(1)
 # -----------------------------
 
+# --- Helper Functions (remain the same) ---
 def read_subreddits_from_file(filename):
     """Reads subreddit names (without r/) from a file."""
-    filepath = os.path.join(os.path.dirname(__file__), filename) # Assume file is in same dir
+    filepath = os.path.join(os.path.dirname(__file__), filename) 
     if not os.path.exists(filepath):
         print(f"Error: Subreddit file not found: {filepath}", file=sys.stderr)
         return None
@@ -75,10 +75,8 @@ def read_subreddits_from_file(filename):
         print(f"Error reading subreddit file {filepath}: {e}", file=sys.stderr)
         return None
 
-
 def create_filtering_prompt(titles_list, company_name):
     """Creates a prompt asking the LLM to filter relevant post titles."""
-    # (Function remains the same)
     titles_text = "\n".join([f"- {title}" for title in titles_list])
     return f"""
 [INST] You are a financial analyst specializing in assessing the stock market impact of news and discussions.
@@ -113,7 +111,6 @@ Rules for your response:
 
 def filter_titles_with_llm(titles_list, company_name):
     """Sends titles to the LLM and returns the list of relevant ones."""
-    # (Function remains largely the same, added stderr logging)
     if not titles_list:
         return []
 
@@ -137,35 +134,59 @@ def filter_titles_with_llm(titles_list, company_name):
         print(f"  LLM API Error: {e}", file=sys.stderr)
         if e.response.status_code == 402:
              print("  FATAL: Hugging Face API credits exceeded. Cannot filter further.", file=sys.stderr)
-             raise e # Re-raise to signal fatal error
+             raise e 
         elif e.response.status_code == 429:
              print("  Rate limit hit. Pausing for 15 seconds...", file=sys.stderr)
              time.sleep(15)
              print("  Skipping LLM filtering for this batch due to rate limit.", file=sys.stderr)
-             return [] # Skip batch
+             return [] 
         else:
              print("  Skipping LLM filtering for this batch due to API error.", file=sys.stderr)
-             return [] # Skip batch
+             return [] 
     except Exception as e:
         print(f"  Unexpected error during LLM filtering: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
         print("  Skipping LLM filtering for this batch.", file=sys.stderr)
-        return [] # Skip batch
+        return [] 
 
     return relevant_titles
 
 
-def scrape_reddit_comments(subreddit_list, output_filepath):
-    """Searches posts, filters titles via LLM, scrapes comments."""
-    # (Function remains largely the same, added stderr logging)
+def scrape_reddit_comments(subreddit_list, output_filepath, start_date_str, end_date_str):
+    """Searches posts within a date range, filters, scrapes comments."""
+    
     print(f"Scraped comments will be saved to: {os.path.basename(output_filepath)}", file=sys.stderr)
+    print(f"Scraping for time period: {start_date_str} to {end_date_str}", file=sys.stderr)
     global SEARCH_KEYWORD
 
+    try:
+        start_dt = datetime.strptime(start_date_str, '%Y-%m-%d').replace(tzinfo=timezone.utc)
+        end_dt = (datetime.strptime(end_date_str, '%Y-%m-%d') + timedelta(days=1)).replace(tzinfo=timezone.utc)
+        start_timestamp = int(start_dt.timestamp())
+        end_timestamp = int(end_dt.timestamp())
+    except ValueError:
+        print(f"FATAL ERROR: Invalid date format passed to scrape_reddit.py. Got {start_date_str}, {end_date_str}", file=sys.stderr)
+        sys.exit(1)
+    
+    # MODIFIED LOGGING: We are searching the 'new' listing now, then checking the date
+    print(f"Searching 'new' posts and filtering by date: {start_date_str} to {end_date_str}...", file=sys.stderr)
+    
     total_comments_saved = 0
     hf_credits_exhausted = False
 
+    raw_posts_filename = os.path.basename(output_filepath).replace('_reddit.txt', '_raw_posts.txt')
+    raw_posts_filepath = os.path.join(os.path.dirname(output_filepath), raw_posts_filename)
+    print(f"Raw post titles will be saved to: {raw_posts_filename}", file=sys.stderr)
+    
     try:
-        # Use 'w' mode to create/overwrite the file
+        with open(raw_posts_filepath, 'w', encoding='utf-8') as f_init:
+             f_init.write(f"Raw post titles for '{SEARCH_KEYWORD}' (Scraped on {datetime.now().isoformat()})\n")
+             f_init.write(f"Data window: {start_date_str} to {end_date_str}\n")
+    except IOError as e:
+         print(f"FATAL ERROR: Could not write to raw posts file {raw_posts_filepath}. Details: {e}", file=sys.stderr)
+         sys.exit(1) 
+
+    try:
         with open(output_filepath, 'w', encoding='utf-8') as f:
             for sub_name in subreddit_list:
                 if hf_credits_exhausted: break
@@ -175,23 +196,79 @@ def scrape_reddit_comments(subreddit_list, output_filepath):
                 titles_found = []
                 try:
                     subreddit = reddit.subreddit(sub_name)
-                    print(f"Searching for posts containing '{SEARCH_KEYWORD}'...", file=sys.stderr)
-                    # Attempt to access subreddit info to trigger potential errors early
+                    
                     try:
-                        subreddit.display_name # Accessing an attribute forces fetch
+                        subreddit.display_name 
                     except RedditAPIException as sub_error:
                          print(f"  Cannot access r/{sub_name}: {sub_error}. Skipping.", file=sys.stderr)
-                         continue # Skip this subreddit
+                         continue 
+                    
+                    # --- CORE CHANGE: Use .new() listing (reliable for recent posts) and implement manual stop check ---
+                    print(f"Retrieving newest submissions and checking date range...", file=sys.stderr)
+                    # Use .new(limit=None) to get up to 1000 items, and stop when the date is too old.
+                    search_results = subreddit.new(limit=None) 
+                    
+                    # --- NEW: Define flexible keywords for checking (same as V3) ---
+                    company_name_lower = SEARCH_KEYWORD.lower()
+                    
+                    keywords = {company_name_lower, f'${company_name_lower}'} 
+                    if len(company_name_lower) > 3 and company_name_lower[:4].isalpha():
+                        keywords.add(company_name_lower[:4]) 
+                    
+                    print(f"Checking for keywords: {list(keywords)} in post title/body...", file=sys.stderr)
+                    # --- END NEW: Define flexible keywords for checking ---
 
-                    for submission in subreddit.search(SEARCH_KEYWORD, sort='new', limit=MAX_POSTS_PER_SUBREDDIT):
+                    posts_in_window = 0
+                    for submission in search_results:
+                        
+                        # Date Stop Check: Stop once the post creation time is older than the *start* of the window
+                        # The 'new' listing is reverse-chronological, so once we pass the start date, we stop.
+                        if submission.created_utc < start_timestamp:
+                            print(f"  Reached posts older than start date ({start_date_str}). Stopping scan.", file=sys.stderr)
+                            break 
+                            
+                        # If the post is too new (i.e., outside the defined end date, shouldn't happen with new() listing, but good practice)
+                        if submission.created_utc >= end_timestamp:
+                             continue
+
+                        # --- MODIFIED KEYWORD FILTERING LOGIC ---
+                        submission_text = submission.title.lower() + " " + submission.selftext.lower()
+                        
+                        is_relevant = False
+                        for keyword in keywords:
+                            if keyword in submission_text: 
+                                is_relevant = True
+                                break
+                        
+                        if not is_relevant:
+                             continue
+                        # --- END MODIFIED KEYWORD FILTERING ---
+                             
                         submissions_found.append(submission)
                         titles_found.append(submission.title)
+                        posts_in_window += 1
 
+                        if len(submissions_found) >= MAX_POSTS_PER_SUBREDDIT:
+                            print(f"  Hit post limit ({MAX_POSTS_PER_SUBREDDIT}) for this subreddit within date range.", file=sys.stderr)
+                            break
+                    
                     if not submissions_found:
-                        print("  No posts found matching the keyword.", file=sys.stderr)
+                        print("  No posts found matching keyword *and* date range.", file=sys.stderr)
                         continue
+                        
+                    # ... (rest of the file saving, LLM filtering, and comment scraping logic remains the same)
+                    print(f"  Found {len(titles_found)} posts in date range. Saving raw titles...", file=sys.stderr)
+                    try:
+                        with open(raw_posts_filepath, 'a', encoding='utf-8') as raw_f:
+                            raw_f.write(f"\n--- Found {len(submissions_found)} posts from r/{sub_name} ---\n")
+                            for submission in submissions_found:
+                                post_date = datetime.fromtimestamp(submission.created_utc, tz=timezone.utc).strftime('%Y-%m-%d')
+                                raw_f.write(f"[{post_date}] {submission.title}\n")
+                        print(f"  Successfully appended {len(submissions_found)} raw post titles to {os.path.basename(raw_posts_filepath)}", file=sys.stderr)
+                    except IOError as e:
+                        print(f"  Warning: Could not write to raw posts file {raw_posts_filepath}: {e}", file=sys.stderr)
 
-                    print(f"  Found {len(titles_found)} posts. Filtering titles via LLM...", file=sys.stderr)
+                    print(f"  Filtering {len(titles_found)} titles via LLM...", file=sys.stderr) 
                     all_relevant_titles = set()
                     for i in range(0, len(titles_found), LLM_FILTER_BATCH_SIZE):
                         batch_titles = titles_found[i:i+LLM_FILTER_BATCH_SIZE]
@@ -203,8 +280,8 @@ def scrape_reddit_comments(subreddit_list, output_filepath):
                                 hf_credits_exhausted = True
                                 print("Stopping further LLM filtering due to exhausted credits.", file=sys.stderr)
                                 break
-                            else: pass # Other errors handled within function
-                        time.sleep(1) # Delay between LLM calls
+                            else: pass 
+                        time.sleep(1) 
 
                     if hf_credits_exhausted:
                          print("Skipping comment scraping for remaining posts/subreddits.", file=sys.stderr)
@@ -220,61 +297,61 @@ def scrape_reddit_comments(subreddit_list, output_filepath):
                         if submission.title.strip() in all_relevant_titles:
                             print(f"    Scraping comments for: '{submission.title[:60]}...'", file=sys.stderr)
                             try:
-                                submission.comments.replace_more(limit=0) # Expand top-level comments
+                                submission.comments.replace_more(limit=0) 
                                 comment_count_for_post = 0
-                                for comment in submission.comments.list(): # Iterate through all comments
+                                for comment in submission.comments.list(): 
                                     if comment_count_for_post >= MAX_COMMENTS_PER_POST: break
                                     if isinstance(comment, praw.models.Comment) and hasattr(comment, 'body') and comment.body:
                                         content = comment.body
                                         sanitized_content = content.replace('\n', ' ').replace('\r', ' ')
-                                        f.write(sanitized_content + '\n') # Write comment to file
+                                        f.write(sanitized_content + '\n') 
                                         comment_count_for_post += 1
                                         comments_from_sub += 1
                                         total_comments_saved += 1
-                                time.sleep(0.5) # API delay
-                            except Exception as post_err:
+                                time.sleep(0.5) 
+                            except Exception as post_err: 
                                 print(f"    Error scraping comments for post ID {submission.id}: {post_err}", file=sys.stderr)
                                 traceback.print_exc(file=sys.stderr)
 
                     print(f"  Saved {comments_from_sub} comments from relevant posts in r/{sub_name}.", file=sys.stderr)
 
-                except Exception as e: # Catch other errors during subreddit processing
+                except Exception as e: 
                     print(f"Unexpected error processing r/{sub_name}: {e}", file=sys.stderr)
                     traceback.print_exc(file=sys.stderr)
 
-                time.sleep(1) # Delay between subreddits
+                time.sleep(1) 
 
-            # Print final summary to STDOUT for Flask
             print(f"\n--- Scraping Complete ---")
             print(f"Successfully saved {total_comments_saved} total comments to {os.path.basename(output_filepath)}")
 
     except IOError as e:
         print(f"FATAL ERROR: Could not write to file {os.path.basename(output_filepath)}. Details: {e}", file=sys.stderr)
-        sys.exit(1) # Exit if cannot write output
+        sys.exit(1) 
     except Exception as e:
         print(f"An unexpected fatal error occurred during scraping: {e}", file=sys.stderr)
         traceback.print_exc(file=sys.stderr)
-        sys.exit(1) # Exit on unexpected error
+        sys.exit(1) 
 
 # --- Main part of the script ---
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python scrape_reddit.py <subreddit_filename.txt>", file=sys.stderr)
+    # (This section remains the same)
+    if len(sys.argv) < 4:
+        print("Usage: python scrape_reddit.py <subreddit_filename.txt> <start_date YYYY-MM-DD> <end_date YYYY-MM-DD>", file=sys.stderr)
         sys.exit(1)
 
     subreddit_filename_arg = sys.argv[1]
-    # Derive base name and keyword from the argument
-    # Assumes filename is like 'CompanyName_subreddits.txt'
+    start_date_arg = sys.argv[2]
+    end_date_arg = sys.argv[3]
+    
     try:
         base_name = os.path.basename(subreddit_filename_arg).split('_subreddits.')[0]
     except Exception:
-        # Fallback if filename format is unexpected
         base_name = os.path.splitext(os.path.basename(subreddit_filename_arg))[0]
 
     output_filename = f"{base_name}_reddit.txt"
-    SEARCH_KEYWORD = base_name # Use the derived base name as the keyword
-    output_filepath = os.path.join(os.path.dirname(__file__), output_filename) # Full path for saving
-    subreddit_filepath = os.path.join(os.path.dirname(__file__), subreddit_filename_arg) # Full path for reading
+    SEARCH_KEYWORD = base_name 
+    output_filepath = os.path.join(os.path.dirname(__file__), output_filename) 
+    subreddit_filepath = os.path.join(os.path.dirname(__file__), subreddit_filename_arg) 
 
     print(f"Using '{SEARCH_KEYWORD}' as keyword. Output file: {output_filename}", file=sys.stderr)
 
@@ -282,7 +359,7 @@ if __name__ == "__main__":
 
     if subreddits:
         print(f"Successfully read {len(subreddits)} subreddits from {subreddit_filename_arg}.", file=sys.stderr)
-        scrape_reddit_comments(subreddits, output_filepath)
+        scrape_reddit_comments(subreddits, output_filepath, start_date_arg, end_date_arg)
     else:
         print("Exiting script because no valid subreddits were read.", file=sys.stderr)
-        sys.exit(1) # Exit if subreddits couldn't be read
+        sys.exit(1)

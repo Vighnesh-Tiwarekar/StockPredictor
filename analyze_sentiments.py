@@ -25,6 +25,7 @@ Do not use this to make investment decisions.
 # -----------------------------
 
 # --- Load the local sentiment analysis pipeline ---
+# (This section remains the same)
 try:
     print(f"Loading local sentiment analysis model: {MODEL_NAME}...", file=sys.stderr)
     sentiment_pipeline = pipeline(
@@ -46,6 +47,7 @@ except Exception as e:
     sys.exit(1)
 # ----------------------------------------------------
 
+# --- Helper Functions ---
 def read_comments_from_file(filename):
     """Reads comments from a file."""
     filepath = os.path.join(os.path.dirname(__file__), filename)
@@ -63,10 +65,8 @@ def read_comments_from_file(filename):
         print(f"Error reading comments file {filepath}: {e}", file=sys.stderr)
         return None
 
-
 def analyze_sentiments(comment_list):
     """Analyzes comments locally using the transformers pipeline."""
-    # (Function remains largely the same, added stderr logging)
     analysis_results = []
     print(f"Starting sentiment analysis for {len(comment_list)} comments using device: {sentiment_pipeline.device}...", file=sys.stderr)
     try:
@@ -112,7 +112,6 @@ def analyze_sentiments(comment_list):
 
 def tally_results(analysis_results):
     """Counts sentiments."""
-    # (Function remains the same)
     scores = {'positive': 0, 'negative': 0, 'neutral': 0, 'other': 0, 'failed': 0}
     for item in analysis_results:
         sentiment = item['sentiment']
@@ -121,25 +120,64 @@ def tally_results(analysis_results):
     return scores
 
 def make_prediction(scores):
-    """Calculates final score and returns prediction word."""
-    # (Function remains the same, added stderr logging)
-    total_analyzed = scores['positive'] + scores['negative'] + scores['neutral']
+    """
+    Calculates final score and returns prediction word, adjusted for Reddit bias and complexity.
+    
+    1. Uses asymmetric thresholds (Change 1).
+    2. Applies a complexity buffer (Change 2).
+    """
+    
+    # --- NEW CONFIGURATION ---
+    # Asymmetric Thresholds (Change 1): Adjusted for Reddit's typical negative bias:
+    POSITIVE_THRESHOLD = 0.15 
+    NEGATIVE_THRESHOLD = -0.05 
+    
+    # Complexity Buffer (Change 2): Prevent 'fall' if negative count is only marginally higher.
+    MIN_DIFF_FOR_FALL = 2 # Requires Negative - Positive >= 2 for the prediction to stand.
+    # --------------------------
+
+    P_raw = scores['positive']
+    N_raw = scores['negative']
+    E_raw = scores['neutral']
+    
+    total_analyzed = P_raw + N_raw + E_raw
+
     if total_analyzed == 0:
         print("\nNot enough data (0 valid comments) to make a prediction.", file=sys.stderr)
         return "neutral"
-    sentiment_score = (scores['positive'] - scores['negative']) / total_analyzed
+        
+    # 1. Calculate sentiment score using raw counts
+    sentiment_score = (P_raw - N_raw) / total_analyzed
     print(f"\nOverall Sentiment Score (from -1.0 to +1.0): {sentiment_score:.3f}", file=sys.stderr)
-    if sentiment_score > 0.1: return "rise"
-    elif sentiment_score < -0.1: return "fall"
-    else: return "neutral"
+    
+    # 2. Determine prediction based on adjusted (asymmetric) thresholds
+    if sentiment_score > POSITIVE_THRESHOLD: 
+        simple_prediction = "rise"
+    elif sentiment_score < NEGATIVE_THRESHOLD: 
+        simple_prediction = "fall"
+    else: 
+        simple_prediction = "neutral"
+
+    # 3. Apply complexity buffer override (User's request: prevents marginal negative signal from causing a 'fall')
+    is_marginal_fall = (N_raw > P_raw) and (N_raw - P_raw < MIN_DIFF_FOR_FALL)
+    
+    if simple_prediction == "fall" and is_marginal_fall:
+        print(f"Overriding 'fall' to 'neutral' due to complexity buffer (Neg: {N_raw}, Pos: {P_raw}, Diff: {N_raw - P_raw} < {MIN_DIFF_FOR_FALL}).", file=sys.stderr)
+        return "neutral"
+        
+    return simple_prediction
 
 # --- Main part of the script ---
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python analyze_sentiments.py <comment_filename.txt>", file=sys.stderr)
+    # --- MODIFIED: Expect 2 arguments ---
+    if len(sys.argv) < 3:
+        print("Usage: python analyze_sentiments.py <comment_filename.txt> <prediction_date YYYY-MM-DD>", file=sys.stderr)
         sys.exit(1)
 
     comment_filename_arg = sys.argv[1]
+    prediction_date_arg = sys.argv[2] # This is the date the prediction is FOR
+    # --- END MODIFICATION ---
+
     comment_filepath = os.path.join(os.path.dirname(__file__), comment_filename_arg)
 
     try:
@@ -151,7 +189,6 @@ if __name__ == "__main__":
             analysis_results = analyze_sentiments(comments)
             scores = tally_results(analysis_results)
 
-            # --- Print final summary to STDOUT for Flask ---
             print("\n--- Sentiment Analysis Complete ---")
             print(f"Positive: {scores['positive']}")
             print(f"Negative: {scores['negative']}")
@@ -159,7 +196,6 @@ if __name__ == "__main__":
             print("---------------------------------")
             print(f"Skipped/Other: {scores['other']}")
             print(f"Failed to analyze: {scores['failed']}")
-            # ---------------------------------------------
 
             simple_prediction = make_prediction(scores)
 
@@ -170,11 +206,9 @@ if __name__ == "__main__":
             else:
                 prediction_string = "Overall sentiment is NEUTRAL. (Simplified Prediction: No Clear Direction ➖)"
 
-            # --- Print prediction to STDOUT for Flask ---
             print("\n--- Final Prediction ---")
             print(prediction_string)
             print(DISCLAIMER)
-            # --------------------------------------------
 
             # Save detailed JSON results
             try:
@@ -189,14 +223,18 @@ if __name__ == "__main__":
 
             # Append prediction to master log file
             try:
-                company_name = base_name.split('_')[0].lower() # Assumes format Company_reddit
+                company_name = base_name.split('_')[0].lower() 
+                
+                # --- MODIFIED: Use prediction_date_arg ---
                 new_prediction = {
                     "company": company_name,
                     "prediction": simple_prediction,
-                    "date_saved": str(date.today()),
+                    "date_saved": prediction_date_arg, # Use the date from argument
                     "status": "pending",
                     "method": "local_sentiment_model"
                 }
+                # --- END MODIFICATION ---
+                
                 log_filename = "all_predictions.json"
                 log_filepath = os.path.join(os.path.dirname(__file__), log_filename)
                 predictions_list = []
@@ -217,7 +255,5 @@ if __name__ == "__main__":
         print("\nScript cancelled by user.", file=sys.stderr)
     except Exception as e:
         print("\nAn unexpected fatal error occurred in analyze_sentiments:", file=sys.stderr)
-        # --- MODIFICATION: Fixed TypeError ---
         traceback.print_exc(file=sys.stderr)
-        # --- END MODIFICATION ---
-        sys.exit(1) # Exit with error for Flask
+        sys.exit(1)

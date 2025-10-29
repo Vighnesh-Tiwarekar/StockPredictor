@@ -14,21 +14,23 @@
         .status-pending { background-color: #fef3c7; color: #92400e; }
         .status-checked { background-color: #d1fae5; color: #065f46; }
         .status-error { background-color: #fee2e2; color: #991b1b; }
-        .score-label { font-size: 0.8rem; color: #a5b4fc; } /* Lighter for contrast */
+        .score-label { font-size: 0.8rem; color: #a5b4fc; } 
         .score-value { font-size: 1.5rem; font-weight: 700; color: #ffffff; line-height: 1; }
-        .score-percentage { font-size: 0.9rem; font-weight: 500; color: #e0e7ff; } /* Lighter for contrast */
-        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #ffffff; /* White loader on buttons */ border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle;}
+        .score-percentage { font-size: 0.9rem; font-weight: 500; color: #e0e7ff; } 
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #ffffff; border-radius: 50%; width: 20px; height: 20px; animation: spin 1s linear infinite; display: inline-block; vertical-align: middle;}
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        /* Style for log output */
-        #log-output, #predict-log, #check-log { /* Combined styles */
+        #log-output, #predict-log, #check-log { 
              white-space: pre-wrap; word-wrap: break-word; font-family: monospace;
              background-color: #1f2937; color: #d1d5db; padding: 1rem;
              border-radius: 0.375rem; max-height: 300px; overflow-y: auto;
              margin-top: 1rem; font-size: 0.8rem; line-height: 1.4;
         }
         .log-hidden { display: none; }
-        /* Button disabled state */
         button:disabled { opacity: 0.6; cursor: not-allowed; }
+        /* Style for date picker placeholder */
+        input[type="date"]:invalid::-webkit-calendar-picker-indicator {
+            opacity: 0.6;
+        }
     </style>
 </head>
 <body class="">
@@ -37,7 +39,7 @@
         <header class="bg-gradient-to-r from-indigo-600 to-purple-700 p-4 sm:p-6 text-white flex justify-between items-center ">
             <h1 class="text-xl sm:text-2xl font-bold">📈 Stock Predictor</h1>
             <div id="reliability-score-display" class="text-right">
-                <span class="score-label block">Reliability Score</span>
+                <span class="score-label block">Global Reliability Score</span>
                 <span class="score-value block">--</span>
                 <span class="score-percentage block">(--%)</span>
             </div>
@@ -46,20 +48,28 @@
         <nav class="flex border-b border-gray-200 bg-gray-50">
             <button id="tab-main" class="tab-button flex-1 py-3 px-4 text-center font-medium text-gray-700 active" onclick="showTab('main')">Predict & Check</button>
             <button id="tab-history" class="tab-button flex-1 py-3 px-4 text-center font-medium text-gray-700" onclick="showTab('history')">History</button>
+            <button id="tab-scores" class="tab-button flex-1 py-3 px-4 text-center font-medium text-gray-700" onclick="showTab('scores')">Reliability Scores</button>
         </nav>
 
         <main class="p-4 sm:p-6">
 
             <div id="content-main">
                 <h2 class="text-lg font-semibold mb-4 text-gray-800">Generate New Prediction</h2>
+                
                 <div class="flex flex-col sm:flex-row gap-3 mb-6">
                     <input type="text" id="company-name-input" placeholder="Enter Company Name (e.g., Reliance)" class="flex-grow p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-150">
+                    
+                    <div class="relative sm:w-1/3">
+                         <label for="prediction-date-input" class="absolute -top-2 left-2 inline-block bg-white px-1 text-xs font-medium text-gray-500">Prediction For</label>
+                         <input type="date" id="prediction-date-input" required class="w-full p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition duration-150 text-gray-700">
+                    </div>
+
                     <button id="predict-button" onclick="handlePredict()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-6 rounded-md transition duration-150 flex items-center justify-center">
                         <span>Run Prediction Pipeline</span>
                         <span id="predict-loader" class="loader hidden ml-2"></span>
                     </button>
                 </div>
-                <div id="predict-status" class="mt-4 text-sm text-gray-600 min-h-[40px] p-3 border border-gray-200 rounded-md bg-gray-50">Enter a company name and click Run.</div>
+                <div id="predict-status" class="mt-4 text-sm text-gray-600 min-h-[40px] p-3 border border-gray-200 rounded-md bg-gray-50">Enter a company name, select a date, and click Run.</div>
                 <pre id="predict-log" class="log-hidden"></pre>
 
                 <hr class="my-6 border-gray-200">
@@ -97,22 +107,30 @@
                     </table>
                 </div>
             </div>
+            
+            <div id="content-scores" class="hidden">
+                 <h2 class="text-lg font-semibold mb-4 text-gray-800">Per-Company Reliability Scores</h2>
+                 <button onclick="loadCompanyScores(true)" class="mb-4 text-sm text-indigo-600 hover:text-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed" id="refresh-scores-button">Refresh Scores</button>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Company</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reliability Score</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total Predictions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="company-scores-table-body" class="bg-white divide-y divide-gray-200">
+                            <tr><td colspan="3" class="text-center p-4 text-gray-500">Loading scores...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </main>
-
-        <!-- <footer class="bg-gray-100 p-4 text-xs text-gray-500 border-t border-gray-200 rounded-b-lg">
-            <strong>Instructions:</strong>
-            <ol class="list-decimal list-inside ml-4 mt-2">
-                <li>Make sure the Flask server (`app.py`) is running in your activated `venv`.</li>
-                <li>Enter a company name and click "Run Prediction Pipeline" to execute the backend scripts. This may take several minutes.</li>
-                <li>Click "Check Pending & Update Score" (usually the next day) to run the verifier script.</li>
-                <li>The Reliability Score and History update automatically after successful operations.</li>
-                <li>View detailed script logs in the terminal where `app.py` is running. Logs are also shown briefly on this page after operations complete.</li>
-            </ol>
-        </footer> -->
     </div>
 
     <script>
-        const API_BASE_URL = ''; // Relative path for Flask app
+        const API_BASE_URL = ''; 
 
         let allPredictions = [];
         let reliabilityScore = { total_predictions: 0, total_score_points: 0.0 };
@@ -130,6 +148,11 @@
         const checkLogEl = document.getElementById('check-log');
         const historyTableBody = document.getElementById('history-table-body');
         const refreshHistoryButton = document.getElementById('refresh-history-button');
+        const refreshScoresButton = document.getElementById('refresh-scores-button');
+        const companyScoresTableBody = document.getElementById('company-scores-table-body');
+        
+        // --- NEW UI REFERENCE ---
+        const predictionDateInput = document.getElementById('prediction-date-input');
 
 
         // --- UI Update Functions ---
@@ -137,11 +160,13 @@
             const busy = isPredicting || isChecking;
             predictButton.disabled = busy;
             checkButton.disabled = busy;
-            refreshHistoryButton.disabled = busy; // Disable refresh while busy
+            refreshHistoryButton.disabled = busy; 
+            refreshScoresButton.disabled = busy; 
             predictLoader.classList.toggle('hidden', !isPredicting);
             checkLoader.classList.toggle('hidden', !isChecking);
         }
 
+        // (setStatus and showLog functions remain the same)
         function setStatus(element, message, type = 'info') {
             element.textContent = message;
             let bgColor = 'bg-gray-50';
@@ -157,13 +182,8 @@
             } else if (type === 'loading') {
                  bgColor = 'bg-blue-50'; textColor = 'text-blue-700'; borderColor = 'border-blue-200';
             }
-            // --- MODIFICATION HERE ---
-            // Ensure status element retains necessary classes AND add 'whitespace-pre-wrap'
             element.className = `mt-4 text-sm p-3 border rounded-md min-h-[40px] ${bgColor} ${textColor} ${borderColor} whitespace-pre-wrap`;
-            // --- END MODIFICATION ---
         }
-
-
         function showLog(logElement, logText) {
             if (logText && logText.trim()) {
                 logElement.textContent = logText.trim();
@@ -174,22 +194,24 @@
             }
         }
 
-
         // --- Tab Management ---
         function showTab(tabName) {
             // (Function remains the same)
             document.getElementById('content-main').classList.toggle('hidden', tabName !== 'main');
             document.getElementById('content-history').classList.toggle('hidden', tabName !== 'history');
+            document.getElementById('content-scores').classList.toggle('hidden', tabName !== 'scores');
             document.getElementById('tab-main').classList.toggle('active', tabName === 'main');
             document.getElementById('tab-history').classList.toggle('active', tabName === 'history');
+            document.getElementById('tab-scores').classList.toggle('active', tabName === 'scores');
 
             if (tabName === 'history') loadHistory(false);
-            if (tabName === 'main') loadReliabilityScore();
+            if (tabName === 'scores') loadCompanyScores(false);
+            if (tabName === 'main') loadReliabilityScore(); 
         }
 
         // --- Data Fetching & Display ---
+        // (loadReliabilityScore, loadHistory, loadCompanyScores functions remain the same)
         async function loadReliabilityScore() {
-            // Added no-cache header
              try {
                 const response = await fetch(`${API_BASE_URL}/api/score`, { cache: "no-store" });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -199,17 +221,14 @@
                 displayReliabilityScore();
             } catch (error) {
                 console.error('Error loading reliability score:', error);
-                displayReliabilityScore(); // Display default/stale score
+                displayReliabilityScore(); 
             }
         }
-
         async function loadHistory(forceRefresh = false) {
-             // Added no-cache header
             if (isPredicting || isChecking) return;
             if (forceRefresh || historyTableBody.rows.length <= 1) {
                  historyTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">Loading history...</td></tr>';
             }
-
             try {
                 const response = await fetch(`${API_BASE_URL}/api/history`, { cache: "no-store" });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -222,9 +241,27 @@
                 historyTableBody.innerHTML = `<tr><td colspan="8" class="text-center p-4 text-red-500">Error loading history: ${error.message}. Is the backend server running?</td></tr>`;
             }
         }
-
+        async function loadCompanyScores(forceRefresh = false) {
+             if (isPredicting || isChecking) return;
+             if (forceRefresh || companyScoresTableBody.rows.length <= 1) {
+                 companyScoresTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">Loading scores...</td></tr>';
+             }
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/score/all`, { cache: "no-store" });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const allScoreData = await response.json();
+                if (!allScoreData || typeof allScoreData.companies !== 'object') {
+                    throw new Error('Invalid score data format');
+                }
+                renderCompanyScoresTable(allScoreData.companies);
+            } catch (error) {
+                console.error('Error loading company scores:', error);
+                companyScoresTableBody.innerHTML = `<tr><td colspan="3" class="text-center p-4 text-red-500">Error loading scores: ${error.message}.</td></tr>`;
+            }
+        }
+        
+        // (displayReliabilityScore, renderHistoryTable, renderCompanyScoresTable, getPredictionEmoji, getResultLabel functions remain the same)
         function displayReliabilityScore() {
-            // (Function remains the same)
              const scoreDisplay = document.getElementById('reliability-score-display');
             let score = 0;
             let percentage = 0;
@@ -235,22 +272,19 @@
             scoreDisplay.querySelector('.score-value').textContent = score.toFixed(3);
             scoreDisplay.querySelector('.score-percentage').textContent = `(${percentage.toFixed(1)}%)`;
         }
-
         function renderHistoryTable() {
-             // (Function remains the same)
             historyTableBody.innerHTML = '';
             if (allPredictions.length === 0) {
                 historyTableBody.innerHTML = '<tr><td colspan="8" class="text-center p-4 text-gray-500">No prediction history found.</td></tr>';
                 return;
             }
-            [...allPredictions].reverse().forEach(pred => { // Newest first
+            [...allPredictions].reverse().forEach(pred => {
                 const row = historyTableBody.insertRow();
                 const predictionScore = pred.prediction_score ?? null;
                 const resultLabel = getResultLabel(predictionScore);
                 const statusClass = pred.status === 'pending' ? 'status-pending' : (pred.status === 'error' ? 'status-error' : 'status-checked');
                 const actualPercentText = (pred.actual_movement_percent !== undefined && pred.actual_movement_percent !== null)
                     ? pred.actual_movement_percent.toFixed(2) + '%' : '--';
-
                 row.innerHTML = `
                     <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${pred.company || 'N/A'}</td>
                     <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${pred.date_saved || 'N/A'}</td>
@@ -263,11 +297,34 @@
                 `;
             });
         }
-
-        function getPredictionEmoji(prediction) { /* ... (same as before) ... */
+        function renderCompanyScoresTable(companiesData) {
+            companyScoresTableBody.innerHTML = '';
+            const companyNames = Object.keys(companiesData);
+            if (companyNames.length === 0) {
+                companyScoresTableBody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-gray-500">No company-specific scores found. Run a prediction and check it.</td></tr>';
+                return;
+            }
+            companyNames.sort().forEach(companyName => {
+                const data = companiesData[companyName];
+                const predictions = data.total_predictions || 0;
+                const points = data.total_score_points || 0.0;
+                let percentage = 0;
+                if (predictions > 0) {
+                    percentage = (points / predictions) * 100;
+                }
+                const displayName = companyName.charAt(0).toUpperCase() + companyName.slice(1);
+                const row = companyScoresTableBody.insertRow();
+                row.innerHTML = `
+                    <td class="px-4 py-2 whitespace-nowrap text-sm font-medium text-gray-900">${displayName}</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500 font-semibold">${percentage.toFixed(1)}%</td>
+                    <td class="px-4 py-2 whitespace-nowrap text-sm text-gray-500">${predictions}</td>
+                `;
+            });
+        }
+        function getPredictionEmoji(prediction) { 
              switch (prediction) { case 'rise': return '📈'; case 'fall': return '📉'; case 'neutral': return '➖'; default: return ''; }
         }
-        function getResultLabel(score) { /* ... (same as before) ... */
+        function getResultLabel(score) { 
              if (score === null || score === undefined) return '--';
             if (score >= 0.9) return 'Excellent 👍👍'; if (score >= 0.7) return 'Good 👍';
             if (score >= 0.4) return 'Okay 👌'; if (score >= 0.2) return 'Poor 👎';
@@ -276,54 +333,66 @@
 
         // --- Button Handlers (Actual API Calls) ---
         async function handlePredict() {
-            // (Function remains largely the same)
+            // --- MODIFIED: Get date value and add to payload ---
              if (isPredicting || isChecking) return;
             const companyNameInput = document.getElementById('company-name-input');
             const companyName = companyNameInput.value.trim();
+            const predictionDate = predictionDateInput.value; // Get date
 
             if (!companyName) {
                 setStatus(predictStatusEl, '⚠️ Please enter a company name.', 'warning');
                 showLog(predictLogEl, '');
                 return;
             }
+            
+            if (!predictionDate) {
+                setStatus(predictStatusEl, '⚠️ Please select a date for the prediction.', 'warning');
+                showLog(predictLogEl, '');
+                return;
+            }
 
             isPredicting = true;
             updateButtonStates();
-            setStatus(predictStatusEl, `⏳ Running prediction pipeline for ${companyName}... This may take several minutes.`, 'loading');
-            showLog(predictLogEl, ''); // Clear previous log
+            // Updated status message
+            setStatus(predictStatusEl, `⏳ Running prediction pipeline for ${companyName} for date ${predictionDate}... This may take several minutes.`, 'loading');
+            showLog(predictLogEl, ''); 
 
             try {
                 const response = await fetch(`${API_BASE_URL}/api/predict`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ company_name: companyName })
+                    // Add prediction_date to the body
+                    body: JSON.stringify({ 
+                        company_name: companyName,
+                        prediction_date: predictionDate 
+                    })
                 });
                 const result = await response.json();
 
                 if (!response.ok || !result.success) {
-                    // Include log in error message if available
                     throw new Error(result.message || `HTTP error ${response.status}`, { cause: result.log });
                 }
 
                 setStatus(predictStatusEl, `✅ ${result.message}`, 'success');
-                // showLog(predictLogEl, result.log || ''); // Show full log
                 companyNameInput.value = ''; // Clear input on success
+                predictionDateInput.value = ''; // Clear date on success
                 loadReliabilityScore();
-                loadHistory(true); // Force refresh history
+                loadHistory(true); 
 
             } catch (error) {
                 console.error('Prediction error:', error);
                 setStatus(predictStatusEl, `❌ Error: ${error.message}. Check Flask terminal for details.`, 'error');
-                showLog(predictLogEl, error.cause || `Error details unavailable. Check Flask terminal.`); // Show log from error cause
+                showLog(predictLogEl, error.cause || `Error details unavailable. Check Flask terminal.`); 
 
             } finally {
                 isPredicting = false;
                 updateButtonStates();
             }
+            // --- END MODIFICATION ---
         }
 
         async function handleCheck() {
-             // (Function remains largely the same)
+             // (Function remains the same)
             if (isPredicting || isChecking) return;
 
             isChecking = true;
@@ -336,24 +405,21 @@
                 const result = await response.json();
 
                  if (!response.ok || !result.success) {
-                     // Even on failure, update UI with potentially changed data from backend
                      if (result.updated_score) reliabilityScore = result.updated_score;
                      if (result.updated_history) allPredictions = result.updated_history;
                      displayReliabilityScore();
                      renderHistoryTable();
+                     loadCompanyScores(true); 
                     throw new Error(result.message || `HTTP error ${response.status}`, { cause: result.log });
                 }
 
-                // Use summary from stdout for status if available
-                // We add the '✅' prefix here in the JS for consistency
                 setStatus(checkStatusEl, `✅ ${result.summary || result.message}`, 'success');
-                // showLog(checkLogEl, result.log || ''); // Show full log
 
-                // Update score and history display with data from successful response
                 if (result.updated_score) reliabilityScore = result.updated_score;
                 if (result.updated_history) allPredictions = result.updated_history;
-                displayReliabilityScore();
-                renderHistoryTable(); // Force refresh after check
+                displayReliabilityScore(); 
+                renderHistoryTable(); 
+                loadCompanyScores(true); 
 
             } catch (error) {
                 console.error('Check error:', error);
@@ -368,9 +434,9 @@
 
         // --- Initial Load ---
         document.addEventListener('DOMContentLoaded', () => {
-            loadReliabilityScore();
-            loadHistory(); // Load initial history
-            updateButtonStates(); // Enable buttons initially
+            loadReliabilityScore(); 
+            loadHistory(); 
+            updateButtonStates(); 
         });
 
     </script>
